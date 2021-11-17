@@ -2,7 +2,7 @@ import torch
 from torch.autograd import Variable
 from math import ceil
 
-def prepare_generator_batch(samples, start_letter=0, gpu=False):
+def prepare_generator_batch(samples):
     """
     Takes samples (a batch) and returns
 
@@ -14,24 +14,20 @@ def prepare_generator_batch(samples, start_letter=0, gpu=False):
         - target: batch_size x seq_len (Variable same as samples)
     """
 
-    batch_size, seq_len = samples.size()
+    batch_size, seq_len, _ = samples.size()
 
-    inp = torch.zeros(batch_size, seq_len)
+    inp = torch.zeros_like(samples)
     target = samples
-    inp[:, 0] = start_letter
+    # inp[:, 0] = start_vector = 0
     inp[:, 1:] = target[:, :seq_len-1]
 
-    inp = Variable(inp).type(torch.LongTensor)
-    target = Variable(target).type(torch.LongTensor)
-
-    if gpu:
-        inp = inp.cuda()
-        target = target.cuda()
+    inp = Variable(inp)
+    target = Variable(target)
 
     return inp, target
 
 
-def prepare_discriminator_data(pos_samples, neg_samples, gpu=False):
+def prepare_discriminator_data(pos_samples, neg_samples):
     """
     Takes positive (target) samples, negative (generator) samples and prepares inp and target data for discriminator.
 
@@ -44,7 +40,7 @@ def prepare_discriminator_data(pos_samples, neg_samples, gpu=False):
         - target: pos_size + neg_size (boolean 1/0)
     """
 
-    inp = torch.cat((pos_samples, neg_samples), 0).type(torch.LongTensor)
+    inp = torch.cat((pos_samples, neg_samples), 0)
     target = torch.ones(pos_samples.size()[0] + neg_samples.size()[0])
     target[pos_samples.size()[0]:] = 0
 
@@ -56,9 +52,6 @@ def prepare_discriminator_data(pos_samples, neg_samples, gpu=False):
     inp = Variable(inp)
     target = Variable(target)
 
-    if gpu:
-        inp = inp.cuda()
-        target = target.cuda()
 
     return inp, target
 
@@ -76,12 +69,22 @@ def batchwise_sample(gen, num_samples, batch_size):
     return torch.cat(samples, 0)[:num_samples]
 
 
-def batchwise_oracle_nll(gen, oracle, num_samples, batch_size, max_seq_len, start_letter=0, gpu=False):
+def batchwise_oracle_nll(gen, oracle, num_samples, batch_size, max_seq_len, gpu=False):
     s = batchwise_sample(gen, num_samples, batch_size)
     oracle_nll = 0
     for i in range(0, num_samples, batch_size):
-        inp, target = prepare_generator_batch(s[i:i+batch_size], start_letter, gpu)
+        inp, target = prepare_generator_batch(s[i:i+batch_size])
         oracle_loss = oracle.batchNLLLoss(inp, target) / max_seq_len
         oracle_nll += oracle_loss.data.item()
 
     return oracle_nll/(num_samples/batch_size)
+
+
+if __name__ == "__main__":
+    from generator import Generator
+    gen = Generator(hidden_dim=32, output_size=4, max_seq_len=10)
+    out = batchwise_sample(gen, num_samples=64, batch_size=8)
+    print(out.size())
+
+    out = prepare_generator_batch(out[:8])
+    print(out[0].size(), out[1].size())
